@@ -1,15 +1,15 @@
 <project>
   <modelVersion>4.0.0</modelVersion>
-<!--
+
   <parent>
     <groupId>org.sonatype.oss</groupId>
     <artifactId>oss-parent</artifactId>
     <version>7</version>
   </parent>
--->
+
   <groupId>net.sf.beaver</groupId>
   <artifactId>beaver</artifactId>
-  <version>0.9.9</version>
+  <version>0.9.10</version>
   <packaging>pom</packaging>
   <name>Beaver</name>
   <description>A LALR Parser Generator</description>

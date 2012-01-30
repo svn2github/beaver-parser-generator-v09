@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.Iterator;
 
@@ -125,15 +126,16 @@ public class GrammarBuilder extends TreeWalker
 	{
 		grammar = new Grammar();
 
-		symbols = new HashMap(89);
+		symbols = new HashMap(499);
 		symbols.put(grammar.error.name, grammar.error);
 		
 		n_nonterms = 1; // error (above)
 		n_terms = 1; // implicit EOF
 		n_rules = 0;
 
-		final HashMap tokens = new HashMap(89);
-        final ArrayList goals = new ArrayList();
+		final Map tokens = new HashMap(499);
+		final Map nonterms = new HashMap(499);
+		final ArrayList goals = new ArrayList();
 		
 		root.accept(new TreeWalker() /* collect terminals, nonterminals and "virtual" symbols */
 		{
@@ -157,12 +159,14 @@ public class GrammarBuilder extends TreeWalker
 				{
 					symbols.put(lhs_sym_name, new NonTerminal(lhs_sym_name));
 					n_nonterms++;
+					nonterms.put(lhs_sym_name, rule.lhs_sym);
 				}
 				else if (tokens.containsKey(lhs_sym_name))
 				{
 					log.error(rule.lhs_sym, "nonterminal was declared as a terminal");
 					symbols.put(lhs_sym_name, new NonTerminal(lhs_sym_name));
 					n_nonterms++;
+					nonterms.put(lhs_sym_name, rule.lhs_sym);
 					tokens.remove(lhs_sym_name);
 					n_terms--;
 				}
@@ -188,7 +192,7 @@ public class GrammarBuilder extends TreeWalker
 				GrammarSymbol rhs_sym = (GrammarSymbol) symbols.get(rhs_sym_name); 
 				if (rhs_sym == null)
 				{
-					log.error(rhs_item.sym_name, "symbol is neither a terminal nor a nonterminal of the grammar");
+					log.error(rhs_item.sym_name, "symbol is not defined by this grammar");
 					symbols.put(rhs_sym_name, rhs_sym = new Terminal(rhs_sym_name));
 					rhs_sym.id = -1; // make it a "virtual" terminal
 				}
@@ -197,15 +201,21 @@ public class GrammarBuilder extends TreeWalker
 					if (rhs_sym.id < 0)
 						log.error(rhs_item.sym_name, "symbol is not declared as a grammar terminal");
 					else
-						tokens.remove(rhs_sym_name);
+						tokens.remove(rhs_sym_name); // because it is used
+				}
+				else
+				{
+					nonterms.remove(rhs_sym_name); // because it is used
 				}
 			}
 		});
-		for (Iterator i = tokens.values().iterator(); i.hasNext();)
+		for (Iterator i = tokens.entrySet().iterator(); i.hasNext();)
 		{
-			Symbol token = (Symbol) i.next();
-			log.warning(token, "declared terminal is not used by the grammar");
-			symbols.remove(token.value);
+			Map.Entry e = (Map.Entry) i.next();
+			String name = (String) e.getKey();
+			Symbol symb = (Symbol) e.getValue();
+			log.warning(symb, "declared terminal is not used by the grammar");
+			symbols.remove(name);
 			n_terms--;
 		}
 		root.accept(new DeclarationWalker()
@@ -312,6 +322,7 @@ public class GrammarBuilder extends TreeWalker
 				else
 				{
 					goals.add(sym);
+					nonterms.remove(sym_name); // because it is used
 				}
 			}
 			public void visit(Declaration.TypeOf decl)
@@ -379,36 +390,45 @@ public class GrammarBuilder extends TreeWalker
 				return code;
 			}
 		});
+		for (Iterator i = nonterms.entrySet().iterator(); i.hasNext();)
+		{
+			Map.Entry e = (Map.Entry) i.next();
+			String name = (String) e.getKey();
+			Symbol symb = (Symbol) e.getValue();
+			log.warning(symb, "non-terminal is not used by the grammar");
+			symbols.remove(name);
+			n_nonterms--;
+		}
 
-        final ArrayList rules = new ArrayList(n_rules * 2); // twice the size to provide space for synthetic rules
-        
-        if (goals.isEmpty())
-        {
-            log.warning(root.rules[0].lhs_sym, "Grammar has not declared any goals, will use first declared nonterminal");
-            grammar.goal_symbol = (NonTerminal) symbols.get(root.rules[0].getLHSSymbolName());
-        }
-        else if (goals.size() == 1) // conventional path
-        {
-            grammar.goal_symbol = (NonTerminal) goals.get(0);
-        }
-        else // parser needs a synthetic goal
-        {
-            NonTerminal[] alts = (NonTerminal[]) goals.toArray(new NonTerminal[goals.size()]);
-            
-            grammar.goal_symbol = new NonTerminal("$goal");
-            symbols.put(grammar.goal_symbol.name, grammar.goal_symbol);
-            n_nonterms++;
+		final ArrayList rules = new ArrayList(n_rules * 2); // twice the size to provide space for synthetic rules
+		
+		if (goals.isEmpty())
+		{
+		    log.warning(root.rules[0].lhs_sym, "Grammar has not declared any goals, will use first declared nonterminal");
+		    grammar.goal_symbol = (NonTerminal) symbols.get(root.rules[0].getLHSSymbolName());
+		}
+		else if (goals.size() == 1) // conventional path
+		{
+		    grammar.goal_symbol = (NonTerminal) goals.get(0);
+		}
+		else // parser needs a synthetic goal
+		{
+		    NonTerminal[] alts = (NonTerminal[]) goals.toArray(new NonTerminal[goals.size()]);
+		    
+		    grammar.goal_symbol = new NonTerminal("$goal");
+		    symbols.put(grammar.goal_symbol.name, grammar.goal_symbol);
+		    n_nonterms++;
 
-            rules.add(new Production(rules.size(), grammar.goal_symbol, new Production.RHS(alts[0])));
-            
-            for (int i = 1; i < alts.length; i++)
-            {
-                Terminal term = new Terminal("$" + alts[i].name);
-                symbols.put(term.name, term);
-                n_terms++;
-                rules.add(new Production(rules.size(), grammar.goal_symbol, new Production.RHS(term, alts[i])));
-            }
-        }
+		    rules.add(new Production(rules.size(), grammar.goal_symbol, new Production.RHS(alts[0])));
+		    
+		    for (int i = 1; i < alts.length; i++)
+		    {
+			Terminal term = new Terminal("$" + alts[i].name);
+			symbols.put(term.name, term);
+			n_terms++;
+			rules.add(new Production(rules.size(), grammar.goal_symbol, new Production.RHS(term, alts[i])));
+		    }
+		}
 
 		root.accept(new RuleWalker() /* grammar's goal cannot be used in any RHS */
 		{
@@ -446,7 +466,10 @@ public class GrammarBuilder extends TreeWalker
 			public void visit(Rule rule)
 			{
 				lhs_sym = (NonTerminal) symbols.get(rule.getLHSSymbolName());
-				super.visit(rule);
+				if (lhs_sym != null)
+				{
+					super.visit(rule);
+				}
 			}
 			
 			public void visit(Rule.Definition rhs)
@@ -455,10 +478,12 @@ public class GrammarBuilder extends TreeWalker
 				
 				super.visit(rhs);
 
-				Production rule = new Production(rules.size(),
-				                                 lhs_sym,
-												 new Production.RHS((Production.RHS.Item[]) rhs_elements.toArray(new Production.RHS.Item[rhs_elements.size()])),
-												 rhs.getPrecedenceSymbolName() == null ? null : (Terminal) symbols.get(rhs.getPrecedenceSymbolName()));
+				Production rule = 
+					new Production ( rules.size()
+				                       , lhs_sym
+						       , new Production.RHS ( 
+								  (Production.RHS.Item[]) rhs_elements.toArray(new Production.RHS.Item[rhs_elements.size()]))
+								, rhs.getPrecedenceSymbolName() == null ? null : (Terminal) symbols.get(rhs.getPrecedenceSymbolName()));
 				String code = rhs.getReduceActionCode();
 				if (code != null)
 				{
@@ -530,7 +555,7 @@ public class GrammarBuilder extends TreeWalker
 		grammar.nonterminals = getNonTerminals();
 		grammar.terminals = getTerminals();
 
-        propagateTypes(grammar.nonterminals);
+		propagateTypes(grammar.nonterminals);
 		writeListsCode(grammar.nonterminals);
 	}
 	

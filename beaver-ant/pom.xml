@@ -4,7 +4,7 @@
   <parent>
     <groupId>net.sf.beaver</groupId>
     <artifactId>beaver</artifactId>
-    <version>0.9.9</version>
+    <version>0.9.10</version>
   </parent>
 
   <artifactId>beaver-ant</artifactId>
