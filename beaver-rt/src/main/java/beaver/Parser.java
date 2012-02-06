@@ -188,7 +188,7 @@ public abstract class Parser
 		
 		public boolean isFull()
 		{
-			return ((idx_add + 1) & IDX_MASK) == idx_get;
+			return ((idx_add + 1) & IDX_MASK) == (isBuffering() ? ix_mark : idx_get);
 		}
 		
 		public int size()
@@ -230,17 +230,15 @@ public abstract class Parser
 		{
 			if (isBuffering())
 			{
-				Symbol symbol = readToken();
-				enque(symbol);
-				return symbol;
-			}
-			else if (isEmpty())
-			{
-				return readToken();
-			}
-			else
-			{
+				if (isEmpty())
+				{
+					enque(readToken());
+				}
 				return deque();
+			} 
+			else 
+			{
+				return (isEmpty() ? readToken() : deque());
 			}
 		}
 
